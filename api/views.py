@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from django.http import HttpResponse
+import random
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -26,24 +27,30 @@ from .models import Question
 
 #     return HttpResponse("done")
 
-@api_view(['POST'])
+@api_view(['GET','POST'])
 def createQuestion(request):
-    questions = request.data
+    if request.method == 'POST':
+        questions = request.data
 
-    for question_data in questions:
-        if not question_data:
-            return Response({"error": "Empty request payload"}, status=status.HTTP_400_BAD_REQUEST)
+        for question_data in questions:
+            if not question_data:
+                return Response({"error": "Empty request payload"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate that the required keys exist in the JSON payload
-        required_keys = ['question', 'subject', 'topic', 'difficulty', 'marks']
-        if not all(key in question_data for key in required_keys):
-            return Response({"error": "Incomplete question data"}, status=status.HTTP_400_BAD_REQUEST)
+            # Validate that the required keys exist in the JSON payload
+            required_keys = ['question', 'subject', 'topic', 'difficulty', 'marks']
+            if not all(key in question_data for key in required_keys):
+                return Response({"error": "Incomplete question data"}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = QuestionSerializer(data=question_data)
-        if serializer.is_valid():
-            serializer.save()
+            serializer = QuestionSerializer(data=question_data)
+            if serializer.is_valid():
+                serializer.save()
+        
+        return Response({"message": "Questions successfully created"}, status=status.HTTP_201_CREATED)
     
-    return Response({"Success"})
+    return Response({
+                        "To add questions, Send POST request with one or more questions in a list in json format.",
+                        "Each question should be represented as an object with attributes: 'question', 'subject', 'topic', 'difficulty', and 'marks'."
+                    })
 
 @api_view(['GET'])
 def questionStore(request):
@@ -53,116 +60,126 @@ def questionStore(request):
     return Response(serializers.data, status=status.HTTP_200_OK)
 
 
-@api_view(['POST'])
+@api_view(['GET','POST'])
 def generateQuestionPaper(request):
-    data = request.data
+    if request.method == 'POST':
+        data = request.data
 
-    total_marks_req = data['marks']
-    easy_percentage = data['easy']
-    medium_percentage = data['medium']
-    hard_percentage = data['hard']
+        total_marks_req = data['marks']
+        easy_percentage = data['easy']
+        medium_percentage = data['medium']
+        hard_percentage = data['hard']
 
-    # Calculate the marks of each difficulty level
-    easy_questions_marks = int(total_marks_req * (easy_percentage / 100))
-    medium_questions_marks = int(total_marks_req * (medium_percentage / 100))
-    hard_questions_marks = int(total_marks_req * (hard_percentage / 100))
+        # Calculate the marks of each difficulty level
+        easy_questions_marks = int(total_marks_req * (easy_percentage / 100))
+        medium_questions_marks = int(total_marks_req * (medium_percentage / 100))
+        hard_questions_marks = int(total_marks_req * (hard_percentage / 100))
 
-    # Query questions from the database based on the difficulty level
-    easy_questions = list(Question.objects.filter(difficulty='easy'))
-    medium_questions = list(Question.objects.filter(difficulty='medium'))
-    hard_questions = list(Question.objects.filter(difficulty='hard'))
+        # Query questions from the database based on the difficulty level
+        easy_questions = list(Question.objects.filter(difficulty='easy'))
+        medium_questions = list(Question.objects.filter(difficulty='medium'))
+        hard_questions = list(Question.objects.filter(difficulty='hard'))
 
-    question_paper = []
+        question_paper = []
 
-    # Collecting easy questions for the question paper
-    for question in easy_questions:
-        if question.marks <= easy_questions_marks:
-            easy_questions_marks -= question.marks
+        # Collecting easy questions for the question paper
+        for question in easy_questions:
+            if question.marks <= easy_questions_marks:
+                easy_questions_marks -= question.marks
+                question_paper.append(question)
+
+        curr_easy_marks = sum(q.marks for q in question_paper)
+        
+        # Collecting medium questions for the question paper
+        for question in medium_questions:
+            if question.marks <= medium_questions_marks:
+                medium_questions_marks -= question.marks
+                question_paper.append(question)
+
+        curr_medium_marks = sum(q.marks for q in question_paper) - curr_easy_marks
+        
+        # Collecting hard questions for the question paper
+        for question in hard_questions:
+            if question.marks <= hard_questions_marks:
+                hard_questions_marks -= question.marks
+                question_paper.append(question)
+
+        curr_hard_marks = sum(q.marks for q in question_paper) - curr_medium_marks - curr_easy_marks
+
+        # Calculate the total marks of the generated question paper
+        question_paper_marks = sum(question.marks for question in question_paper)
+
+        # if question paper marks is less than required marks, then adding new extra questions to the question paper
+        new_easy_questions = [q for q in easy_questions if q not in question_paper]
+        new_medium_questions = [q for q in medium_questions if q not in question_paper]
+        new_hard_questions = [q for q in hard_questions if q not in question_paper]
+
+        new_easy = 0
+        new_medium = 0
+        new_hard = 0
+
+        # Getting the number of addition questions we need in order to complete the question paper based on difficulties
+        easy_marks = easy_questions[0].marks
+        medium_marks = medium_questions[0].marks
+        hard_marks = hard_questions[0].marks
+
+        for x in range(len(new_easy_questions) + 1):
+            for y in range(len(new_medium_questions) + 1):
+                for z in range(len(new_hard_questions) + 1):
+                    if easy_marks*x + medium_marks*y + hard_marks*z == total_marks_req - question_paper_marks:
+                        new_easy = x
+                        new_medium = y
+                        new_hard = z
+                        break
+        
+        for question in new_easy_questions:
+            if new_easy == 0:
+                break
+
             question_paper.append(question)
+            curr_easy_marks += question.marks
+            new_easy-=1
 
-    curr_easy_marks = sum(q.marks for q in question_paper)
-    
-    # Collecting easy questions for the question paper
-    for question in medium_questions:
-        if question.marks <= medium_questions_marks:
-            medium_questions_marks -= question.marks
+        for question in new_medium_questions:
+            if new_medium == 0:
+                break
+        
             question_paper.append(question)
+            curr_medium_marks += question.marks
+            new_medium-=1
 
-    curr_medium_marks = sum(q.marks for q in question_paper) - curr_easy_marks
-    
-    # Collecting easy questions for the question paper
-    for question in hard_questions:
-        if question.marks <= hard_questions_marks:
-            hard_questions_marks -= question.marks
+        for question in new_hard_questions:
+            if new_hard == 0:
+                break
+        
             question_paper.append(question)
+            curr_hard_marks += question.marks
+            new_hard-=1
 
-    curr_hard_marks = sum(q.marks for q in question_paper) - curr_medium_marks - curr_easy_marks
+        question_paper_marks = sum(question.marks for question in question_paper)
 
-    # Calculate the total marks of the generated question paper
-    question_paper_marks = sum(question.marks for question in question_paper)
+        final_easy_percentage = curr_easy_marks / question_paper_marks * 100
+        final_medium_percentage = curr_medium_marks / question_paper_marks * 100
+        final_hard_percentage = curr_hard_marks / question_paper_marks * 100
 
-    # if question paper marks is less than required marks, then adding new extra questions to the question paper
-    new_easy_questions = [q for q in easy_questions if q not in question_paper]
-    new_medium_questions = [q for q in medium_questions if q not in question_paper]
-    new_hard_questions = [q for q in hard_questions if q not in question_paper]
+        random.shuffle(question_paper)
 
-    new_easy = 0
-    new_medium = 0
-    new_hard = 0
+        # Serializing the question paper data
+        serializer = QuestionSerializer(question_paper, many=True)
 
-    easy_marks = easy_questions[0].marks
-    medium_marks = medium_questions[0].marks
-    hard_marks = hard_questions[0].marks
-
-    for x in range(len(new_easy_questions) + 1):
-        for y in range(len(new_medium_questions) + 1):
-            for z in range(len(new_hard_questions) + 1):
-                if easy_marks*x + medium_marks*y + hard_marks*z == total_marks_req - question_paper_marks:
-                    new_easy = x
-                    new_medium = y
-                    new_hard = z
-                    break
+        return Response({
+                            "question_paper": serializer.data,
+                            "total_marks": question_paper_marks,
+                            "Easy Question Percentages" : str(final_easy_percentage) + "%",
+                            "Medium Question Percentages": str(final_medium_percentage) + "%",
+                            "Hard Question Percentages": str(final_hard_percentage) + "%",
+                        }, status=status.HTTP_200_OK)
     
-    for question in new_easy_questions:
-        if new_easy == 0:
-            break
-
-        question_paper.append(question)
-        curr_easy_marks += question.marks
-        new_easy-=1
-
-    for question in new_medium_questions:
-        if new_medium == 0:
-            break
-    
-        question_paper.append(question)
-        curr_medium_marks += question.marks
-        new_medium-=1
-
-    for question in new_hard_questions:
-        if new_hard == 0:
-            break
-    
-        question_paper.append(question)
-        curr_hard_marks += question.marks
-        new_hard-=1
-
-    question_paper_marks = sum(question.marks for question in question_paper)
-
-    final_easy_percentage = curr_easy_marks / question_paper_marks * 100
-    final_medium_percentage = curr_medium_marks / question_paper_marks * 100
-    final_hard_percentage = curr_hard_marks / question_paper_marks * 100
-
-    # Serializing the question paper data
-    serializer = QuestionSerializer(question_paper, many=True)
-
     return Response({
-                        "question_paper": serializer.data,
-                        "total_marks": question_paper_marks,
-                        "Easy Question Percentages" : final_easy_percentage,
-                        "Medium Question Percentages": final_medium_percentage,
-                        "Hard Question Percentages": final_hard_percentage,
-                    }, status=status.HTTP_200_OK)
+                        "To generate question paper, Send POST request question paper requirements in json",
+                        "This requirements should be represented as an object with attributes: 'marks', 'easy', 'medium', 'hard'.",
+                        "here, marks = total marks of question paper, difficulties = percentages of perticuler difficulty marks requires."
+                    })
 
 def homePage(request):
     return HttpResponse("Examos: A Question Paper Generator")

@@ -75,11 +75,25 @@ WSGI_APPLICATION = 'Examos.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
+
+
+#for mongoDB
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+       'default': {
+           'ENGINE': 'djongo',
+           'NAME': 'Examos',
+           "CLIENT" : {
+                'host' : 'mongodb+srv://Dhruvin:Dhruvin123@cluster0.mx0mm1c.mongodb.net/',
+                'username':'Dhruvin',
+                'password':'Dhruvin123',
+           }
+       }
 }
 
 
