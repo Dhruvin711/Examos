@@ -30,7 +30,8 @@ from .models import Question
 @api_view(['GET','POST'])
 def createQuestion(request):
     if request.method == 'POST':
-        questions = request.data
+        data = request.data
+        questions = data["questions"]
 
         for question_data in questions:
             if not question_data:
